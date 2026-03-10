@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>StayFlow AI</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f6f7fb;
+      margin: 0;
+      padding: 24px;
+      color: #1f2937;
+    }
+    .container {
+      max-width: 760px;
+      margin: 0 auto;
+      background: white;
+      padding: 24px;
+      border-radius: 16px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.08);
+    }
+    h1 { margin-top: 0; }
+    p { color: #6b7280; }
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+    .full { grid-column: 1 / -1; }
+    label {
+      display: block;
+      margin-bottom: 6px;
+      font-weight: bold;
+    }
+    input, select, textarea, button {
+      width: 100%;
+      padding: 12px;
+      border: 1px solid #d1d5db;
+      border-radius: 10px;
+      box-sizing: border-box;
+      font-size: 14px;
+    }
+    textarea {
+      min-height: 100px;
+      resize: vertical;
+    }
+    button {
+      background: #111827;
+      color: white;
+      border: none;
+      cursor: pointer;
+      font-weight: bold;
+    }
+    button:disabled {
+      opacity: 0.7;
+      cursor: not-allowed;
+    }
+    .result {
+      margin-top: 20px;
+      padding: 16px;
+      border-radius: 12px;
+      display: none;
+      white-space: pre-wrap;
+    }
+    .success {
+      display: block;
+      background: #ecfdf5;
+      border: 1px solid #a7f3d0;
+      color: #065f46;
+    }
+    .error {
+      display: block;
+      background: #fef2f2;
+      border: 1px solid #fecaca;
+      color: #991b1b;
+    }
+    .reply {
+      margin-top: 12px;
+      background: #f9fafb;
+      border: 1px solid #e5e7eb;
+      padding: 12px;
+      border-radius: 10px;
+      color: #111827;
+    }
+    @media (max-width: 700px) {
+      .grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>StayFlow AI</h1>
+    <p>
+      Booking request assistant for small guesthouses.
+      It stores requests in Google Sheets via Sheet Ninja and generates a reply draft.
+    </p>
+
+    <form id="bookingForm">
+      <div class="grid">
+        <div>
+          <label>Guest Name</label>
+          <input type="text" name="guest_name" required />
+        </div>
+
+        <div>
+          <label>Email</label>
+          <input type="email" name="email" required />
+        </div>
+
+        <div>
+          <label>Check-in</label>
+          <input type="date" name="check_in" required />
+        </div>
+
+        <div>
+          <label>Check-out</label>
+          <input type="date" name="check_out" required />
+        </div>
+
+        <div>
+          <label>Guests</label>
+          <input type="number" name="guests" min="1" required />
+        </div>
+
+        <div>
+          <label>Room Type</label>
+          <select name="room_type" required>
+            <option value="">Select a room</option>
+            <option value="Standard">Standard</option>
+            <option value="Deluxe">Deluxe</option>
+            <option value="Family">Family</option>
+          </select>
+        </div>
+
+        <div class="full">
+          <label>Special Requests</label>
+          <textarea name="special_requests" placeholder="Airport pickup, breakfast, late check-in..."></textarea>
+        </div>
+
+        <div class="full">
+          <button id="submitBtn" type="submit">Send Booking Request</button>
+        </div>
+      </div>
+    </form>
+
+    <div id="result" class="result"></div>
+  </div>
+
+  <script>
+    const ENDPOINT = "https://api.sheetninja.io/3bb7e50c32dc4f6ea793020f32fd2e5e/bookingRequests/bookingRequests";
+
+    const form = document.getElementById("bookingForm");
+    const submitBtn = document.getElementById("submitBtn");
+    const resultBox = document.getElementById("result");
+
+    function buildReplyDraft(data) {
+      return `Hello ${data.guest_name},
+
+Thank you for your booking request.
+
+We have received your inquiry for a ${data.room_type} room from ${data.check_in} to ${data.check_out} for ${data.guests} guest(s).
+
+${data.special_requests ? "Special requests noted: " + data.special_requests : "No additional special requests were included."}
+
+Our team will review availability and get back to you shortly with confirmation and next steps.
+
+Best regards,
+Reservations Team`;
+    }
+
+    function showMessage(type, message, replyDraft = "") {
+      resultBox.className = `result ${type}`;
+      resultBox.style.display = "block";
+      resultBox.innerHTML = replyDraft
+        ? `${message}<div class="reply"><strong>Generated reply draft</strong><br><br>${replyDraft.replace(/\n/g, "<br>")}</div>`
+        : message;
+    }
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      resultBox.style.display = "none";
+
+      const formData = new FormData(form);
+      const data = Object.fromEntries(formData.entries());
+
+      if (new Date(data.check_out) <= new Date(data.check_in)) {
+        showMessage("error", "Check-out date must be after check-in date.");
+        return;
+      }
+
+      const replyDraft = buildReplyDraft(data);
+
+      const payload = {
+        guest_name: data.guest_name,
+        email: data.email,
+        check_in: data.check_in,
+        check_out: data.check_out,
+        guests: Number(data.guests),
+        room_type: data.room_type,
+        special_requests: data.special_requests || "",
+        status: "pending",
+        reply_draft: replyDraft,
+        created_at: new Date().toISOString()
+      };
+
+      submitBtn.disabled = true;
+      submitBtn.textContent = "Submitting...";
+
+      try {
+        const response = await fetch(ENDPOINT, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify(payload)
+        });
+
+        const text = await response.text();
+
+        if (!response.ok) {
+          throw new Error(`Request failed: ${response.status} ${text}`);
+        }
+
+        showMessage("success", "Booking request saved successfully.", replyDraft);
+        form.reset();
+      } catch (error) {
+        showMessage("error", error.message);
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = "Send Booking Request";
+      }
+    });
+  </script>
+</body>
+</html>
